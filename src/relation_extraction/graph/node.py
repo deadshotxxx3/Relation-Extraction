@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from RelationExtraction.src.relation_extraction.models.token import Token
+from src.relation_extraction.models.token import Token
 
 
 @dataclass

@@ -8,7 +8,7 @@ def main():
     parser = Parser()
 
     examples = loader.load_file(
-        "./src/relation_extraction/data/TRAIN_FILE.TXT"
+        "./data/row/TRAIN_FILE.TXT"
     )
 
     print(f"Loaded {len(examples)} examples")
@@ -40,11 +40,11 @@ def main():
         print()
         print("Shortest dependency path:")
 
-        for source, relation, target in path:
+        for source, relation, target, direction in path:
             print(
                 f"{source.token.text} "
-                f"--{relation}--> "
-                f"{target.token.text}"
+                f"{direction} {relation} {direction}"
+                f" {target.token.text}"
             )
 
         print()

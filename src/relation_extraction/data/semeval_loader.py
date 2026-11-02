@@ -6,7 +6,7 @@ ENTITIES_REGEX = r"<e1>(.*?)</e1>|<e2>(.*?)</e2>"
 
 class SemEvalLoader:
     def parse_example(self, text: str, relation: str | None = None) -> SemEvalExample:
-        text = self._clean_sentence(text)
+        index, text = self._clean_sentence(text)
 
         entity1 = None
         entity2 = None
@@ -46,6 +46,7 @@ class SemEvalLoader:
 
         return SemEvalExample(
             sentence=sentence,
+            index_of_sent=index,
             entity1=entity1,
             entity2=entity2,
             entity1_span=entity1_span,
@@ -53,15 +54,17 @@ class SemEvalLoader:
             relation=relation,
         )
 
-    def _clean_sentence(self, text: str) -> str:
+    def _clean_sentence(self, text: str) -> tuple[int, str]:
         text = text.strip()
 
-        text = re.sub(r'^\d+\s+', '', text)
+        match = re.match(r'^(\d+)\s+(.*)$', text)
+        index = match.group(1)
+        text = match.group(2)
 
         if text.startswith('"') and text.endswith('"'):
             text  = text[1:-1]
 
-        return text
+        return index, text
 
     def find_entity_indices(self, tokens, entity_span: tuple[int, int]) -> list[int]:
         start, end = entity_span
@@ -85,21 +88,16 @@ class SemEvalLoader:
         examples = []
 
         with open(path, "r", encoding="utf-8") as file:
-            while True:
-                sentence_line = file.readline()
 
-                if not sentence_line:
-                    break
+            lines = file.readlines()
 
-                relation_line = file.readline()
-                file.readline()
-                file.readline()
+            for i in range(0, len(lines), 4):
+                sentence_line, relation_line = lines[i], lines[i+1]
+                if sentence_line is None or relation_line is None or lines[i + 3] != "\n": #
+                    raise ValueError("Dataset reading error")
 
                 sentence_line = sentence_line.strip()
                 relation_line = relation_line.strip()
-
-                if not sentence_line:
-                    continue
 
                 example = self.parse_example(text=sentence_line, relation=relation_line)
                 examples.append(example)

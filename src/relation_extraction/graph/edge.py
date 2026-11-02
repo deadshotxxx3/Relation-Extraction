@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from RelationExtraction.src.relation_extraction.graph.node import Node
+from src.relation_extraction.graph.node import Node
 
 
 @dataclass

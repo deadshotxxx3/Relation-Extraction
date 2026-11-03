@@ -10,7 +10,7 @@ class DependencyGraph:
     def __init__(self):
         self.nodes: dict[int, Node] = {}
         self.edges: list[Edge] = []
-        self.graph = nx.Graph()
+        self.graph = None
 
     def build(self, tokens: list[Token], dependencies: list[Dependency]) -> None:
         self.nodes = {token.token_index: Node(token=token) for token in tokens}
@@ -25,7 +25,7 @@ class DependencyGraph:
             and dependency.dependent in self.nodes
             and dependency.head in self.nodes
         ]
-
+        self.graph = nx.Graph()
         self.graph.add_nodes_from(self.nodes.keys())
 
         for edge in self.edges:
@@ -48,7 +48,7 @@ class DependencyGraph:
                 return edge.target
         return None
 
-    def shortest_dependency_path(self, entity1_indices: list[int], entity2_indices: list[int]) -> list[tuple[Node, str, Node, str]]:
+    def shortest_dependency_path(self, entity1_indices: list[int], entity2_indices: list[int]) -> list[tuple[Node, str, Node, str]] | None:
         best_path = None
 
         for source in entity1_indices:
@@ -63,7 +63,7 @@ class DependencyGraph:
                     best_path = path
 
         if best_path is None:
-            raise nx.NetworkXNoPath("No path between entities")
+            return None
 
         result = []
 

@@ -58,7 +58,7 @@ class SemEvalLoader:
         text = text.strip()
 
         match = re.match(r'^(\d+)\s+(.*)$', text)
-        index = match.group(1)
+        index = int(match.group(1))
         text = match.group(2)
 
         if text.startswith('"') and text.endswith('"'):
@@ -93,8 +93,6 @@ class SemEvalLoader:
 
             for i in range(0, len(lines), 4):
                 sentence_line, relation_line = lines[i], lines[i+1]
-                if sentence_line is None or relation_line is None or lines[i + 3] != "\n": #
-                    raise ValueError("Dataset reading error")
 
                 sentence_line = sentence_line.strip()
                 relation_line = relation_line.strip()

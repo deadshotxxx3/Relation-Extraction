@@ -7,47 +7,58 @@ def main():
     loader = SemEvalLoader()
     parser = Parser()
 
-    examples = loader.load_file(
-        "./data/row/TRAIN_FILE.TXT"
-    )
+    examples = loader.load_file("./data/raw/TRAIN_FILE.TXT")
 
     print(f"Loaded {len(examples)} examples")
+    no_path_count = 0
 
-    for example in examples[:3]:
-        tokens, dependencies = parser.parse(example.sentence)
+    for i in range(len(examples)):
+        tokens, dependencies = parser.parse(examples[i].sentence)
 
-        entity1_indices = loader.find_entity_indices(tokens, example.entity1_span)
+        entity1_indices = loader.find_entity_indices(tokens, examples[i].entity1_span)
 
-        entity2_indices = loader.find_entity_indices(tokens, example.entity2_span)
+        entity2_indices = loader.find_entity_indices(tokens, examples[i].entity2_span)
 
         graph = DependencyGraph()
         graph.build(tokens, dependencies)
 
         path = graph.shortest_dependency_path(entity1_indices, entity2_indices)
 
-        print("Sentence:")
-        print(example.sentence)
+        if path is None:
+            no_path_count += 1
+            continue
 
-        print()
-        print("Entity 1:", example.entity1)
-        print("Entity 1 indices:", entity1_indices)
+        if i < 5:
+            print("Sentence:")
+            print(examples[i].sentence)
 
-        print("Entity 2:", example.entity2)
-        print("Entity 2 indices:", entity2_indices)
+            print()
+            print("Entity 1:", examples[i].entity1)
+            print("Entity 1 indices:", entity1_indices)
 
-        print("Relation:", example.relation)
+            print("Entity 2:", examples[i].entity2)
+            print("Entity 2 indices:", entity2_indices)
 
-        print()
-        print("Shortest dependency path:")
+            print("Relation:", examples[i].relation)
 
-        for source, relation, target, direction in path:
-            print(
-                f"{source.token.text} "
-                f"{direction} {relation} {direction}"
-                f" {target.token.text}"
-            )
+            print()
+            print("Shortest dependency path:")
 
-        print()
+            for source, relation, target, direction in path:
+                if direction == "->":
+                    print(
+                        f"{source.token.text} "
+                        f"--{relation}-> "
+                        f"{target.token.text}"
+                    )
+                else:
+                    print(
+                        f"{source.token.text} "
+                        f"<-{relation}-- "
+                        f"{target.token.text}"
+                    )
+
+            print()
 
 if __name__ == "__main__":
     main()

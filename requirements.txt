@@ -1,0 +1,4 @@
+spacy
+networkx
+scikit-learn
+torch

@@ -1,3 +1,5 @@
+SEED = 42
+
 LABELS = [
     "Other",
     "Cause-Effect(e1,e2)",

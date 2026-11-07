@@ -1,64 +1,29 @@
-from src.relation_extraction.data.semeval_loader import SemEvalLoader
-from src.relation_extraction.parsing.parser import Parser
-from src.relation_extraction.graph.graph import DependencyGraph
+"""Точка входа: генерирует tests/sample.jsonl из SemEval TRAIN_FILE.TXT."""
+from src.relation_extraction.pipeline.generate_sample import generate_sample
 
 
-def main():
-    loader = SemEvalLoader()
-    parser = Parser()
+INPUT_PATH = "./data/raw/TRAIN_FILE.TXT"
+OUTPUT_PATH = "tests/sample.jsonl"
+LIMIT = 20
 
-    examples = loader.load_file("./data/raw/TRAIN_FILE.TXT")
 
-    print(f"Loaded {len(examples)} examples")
-    no_path_count = 0
+def main() -> None:
+    stats = generate_sample(
+        input_path=INPUT_PATH,
+        output_path=OUTPUT_PATH,
+        limit=LIMIT,
+    )
 
-    for i in range(len(examples)):
-        tokens, dependencies = parser.parse(examples[i].sentence)
+    print(f"Wrote {stats['written']} records -> {OUTPUT_PATH}")
 
-        entity1_indices = loader.find_entity_indices(tokens, examples[i].entity1_span)
+    if stats["failed_entity_ids"]:
+        print(
+            f"Entity resolution failed for {len(stats['failed_entity_ids'])} "
+            f"examples: {stats['failed_entity_ids']}"
+        )
 
-        entity2_indices = loader.find_entity_indices(tokens, examples[i].entity2_span)
+    print(f"Examples without dependency path: {stats['no_path']}")
 
-        graph = DependencyGraph()
-        graph.build(tokens, dependencies)
-
-        path = graph.shortest_dependency_path(entity1_indices, entity2_indices)
-
-        if path is None:
-            no_path_count += 1
-            continue
-
-        if i < 5:
-            print("Sentence:")
-            print(examples[i].sentence)
-
-            print()
-            print("Entity 1:", examples[i].entity1)
-            print("Entity 1 indices:", entity1_indices)
-
-            print("Entity 2:", examples[i].entity2)
-            print("Entity 2 indices:", entity2_indices)
-
-            print("Relation:", examples[i].relation)
-
-            print()
-            print("Shortest dependency path:")
-
-            for source, relation, target, direction in path:
-                if direction == "->":
-                    print(
-                        f"{source.token.text} "
-                        f"--{relation}-> "
-                        f"{target.token.text}"
-                    )
-                else:
-                    print(
-                        f"{source.token.text} "
-                        f"<-{relation}-- "
-                        f"{target.token.text}"
-                    )
-
-            print()
 
 if __name__ == "__main__":
     main()

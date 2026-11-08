@@ -6,7 +6,6 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
-
 from sklearn.metrics import classification_report, confusion_matrix
 
 from src.relation_extraction.config import LABELS
@@ -53,9 +52,11 @@ def _validate_metric_inputs(
     _validate_labels(gold, pred)
 
 
-def official_f1(gold: list[str], pred: list[str]) -> tuple[float, dict]:
+def official_f1(
+    gold: list[str],
+    pred: list[str],
+) -> tuple[float, dict]:
     _validate_metric_inputs(gold, pred)
-
     present_relations = {
         relation_type(label)
         for label in gold
@@ -117,6 +118,7 @@ def save_confusion_matrix(
     pred: list[str],
     path: str | Path,
 ) -> None:
+
     _validate_metric_inputs(gold, pred)
 
     path = Path(path)
@@ -186,7 +188,6 @@ def evaluate(
     name: str,
     split: str = "test",
 ) -> dict:
-
     if not (len(ids) == len(gold) == len(pred)):
         raise ValueError(
             "ids, gold and pred must have the same length: "

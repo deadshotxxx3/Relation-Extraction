@@ -1,4 +1,3 @@
-
 import json
 from pathlib import Path
 from typing import Sequence
@@ -54,14 +53,20 @@ def _validate_metric_inputs(
     _validate_labels(gold, pred)
 
 
-def official_f1(
-    gold: list[str],
-    pred: list[str],
-) -> tuple[float, dict]:
+def official_f1(gold: list[str], pred: list[str]) -> tuple[float, dict]:
     _validate_metric_inputs(gold, pred)
+
+    present_relations = {
+        relation_type(label)
+        for label in gold
+        if label != OTHER_LABEL
+    }
+
     per_relation = {}
 
     for relation in RELATION_TYPES:
+        if relation not in present_relations:
+            continue
 
         correct = sum(
             1
@@ -96,13 +101,13 @@ def official_f1(
             "f1": f1 * 100,
         }
 
-    if not RELATION_TYPES:
+    if not per_relation:
         return 0.0, per_relation
 
     macro_f1 = sum(
         metrics["f1"]
         for metrics in per_relation.values()
-    ) / len(RELATION_TYPES)
+    ) / len(per_relation)
 
     return macro_f1, per_relation
 

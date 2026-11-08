@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
+
 import pytest
+
 from src.relation_extraction.config import LABELS
 from src.relation_extraction.evaluate import (
     relation_type,
@@ -76,6 +78,19 @@ def test_wrong_relation_direction_is_error():
     assert metrics["f1"] == pytest.approx(0.0)
 
 
+def test_macro_f1_uses_only_relations_present_in_gold():
+    gold = [
+        "Cause-Effect(e1,e2)",
+        "Other",
+    ]
+    pred = gold.copy()
+
+    score, per_relation = official_f1(gold, pred)
+
+    assert score == pytest.approx(100.0)
+    assert list(per_relation.keys()) == ["Cause-Effect"]
+
+
 def test_different_lengths_raise_error():
     gold = ["Other", "Other"]
     pred = ["Other"]
@@ -116,7 +131,7 @@ def test_empty_input():
     score, per_relation = official_f1([], [])
 
     assert score == pytest.approx(0.0)
-    assert len(per_relation) == 9
+    assert per_relation == {}
 
 
 def test_evaluate_creates_all_files(tmp_path, monkeypatch):

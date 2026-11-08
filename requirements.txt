@@ -2,3 +2,6 @@ spacy
 networkx
 scikit-learn
 torch
+scikit-learn
+matplotlib
+pytest

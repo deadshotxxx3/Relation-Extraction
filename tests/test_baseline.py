@@ -11,6 +11,15 @@ from src.relation_extraction.baseline import (
     predict_baseline,
 )
 
+from src.relation_extraction.evaluate import evaluate, official_f1
+import shutil
+from scripts.run_baseline import main
+
+
+@pytest.fixture
+def sample_path():
+    return Path(__file__).parent / "sample.jsonl"
+
 
 @pytest.fixture
 def example():
@@ -68,6 +77,14 @@ class TestMakeText:
         with pytest.raises(ValueError, match="dependency relations"):
             make_text(example, "sdp_deps")
 
+    def test_first_sample_sentence(self, sample_path):
+        with sample_path.open("r", encoding="utf-8") as file:
+            first_example = json.loads(next(file))
+
+        result = make_text(first_example, "sentence")
+
+        assert result == ("the system as described above has its greatest application "
+                          "in an arrayed configuration of antenna elements .")
 
 class TestLoadSplit:
 
@@ -179,6 +196,13 @@ class TestTrainBaseline:
         with pytest.raises(ValueError, match="Unknown labels"):
             train_baseline(texts, labels)
 
+    def test_dependency_direction_is_kept_in_vocabulary(self, sample_path):
+        _, texts, labels = load_split(sample_path, "sdp_deps")
+        model = train_baseline(texts, labels, C=10)
+        vocabulary = model.named_steps["tfidf"].vocabulary_
+
+        assert "prep<-" in vocabulary
+
 
 class TestPredictBaseline:
 
@@ -206,3 +230,68 @@ class TestPredictBaseline:
 
         for prediction in predictions:
             assert isinstance(prediction, str)
+
+class TestBaselineQuality:
+
+    @pytest.mark.parametrize("mode", ["sentence", "sdp", "sdp_deps"])
+    def test_f1_is_100_on_sample_with_c_10(self, sample_path, mode):
+        _, texts, labels = load_split(sample_path, mode)
+
+        model = train_baseline(texts, labels, C=10)
+
+        predictions = predict_baseline(model, texts)
+
+        score, _ = official_f1(labels, predictions)
+
+        assert score == pytest.approx(100.0)
+
+
+class TestRunBaseline:
+
+    def test_run_baseline_script(
+        self,
+        tmp_path,
+        monkeypatch,
+        sample_path,
+        capsys,
+    ):
+        monkeypatch.chdir(tmp_path)
+
+        for filename in (
+            "train.jsonl",
+            "dev.jsonl",
+            "test.jsonl",
+            "test_noisy.jsonl",
+        ):
+            shutil.copyfile(sample_path, tmp_path / filename)
+
+        main([
+            "--mode", "sentence",
+            "--train", "train.jsonl",
+            "--dev", "dev.jsonl",
+            "--test", "test.jsonl", "test_noisy.jsonl",
+            "--C", "0.1", "1", "10",
+        ])
+
+        results_dir = tmp_path / "results"
+
+        assert (results_dir / "baseline_sentence_test.json").exists()
+        assert (results_dir / "baseline_sentence_test_preds.jsonl").exists()
+        assert (results_dir / "baseline_sentence_test_cm.png").exists()
+
+        assert (results_dir / "baseline_sentence_test_noisy.json").exists()
+        assert (results_dir / "baseline_sentence_test_noisy_preds.jsonl").exists()
+        assert (results_dir / "baseline_sentence_test_noisy_cm.png").exists()
+
+        assert not (results_dir / "baseline_sentence_dev.json").exists()
+
+        with (results_dir / "baseline_sentence_test.json").open(
+            "r", encoding="utf-8"
+        ) as file:
+            result = json.load(file)
+
+        assert result["official_f1"] == pytest.approx(100.0)
+        assert result["split"] == "test"
+
+        output = capsys.readouterr().out
+        assert "Selected C =" in output

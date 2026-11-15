@@ -102,7 +102,7 @@ def load_split(path: str | Path, mode: str) -> tuple[list[int | str], list[str],
     return ids, texts, labels
 
 
-def train_baseline(texts: list[str], labels: list[str], inverse_regularization_strength: float = 1.0,) -> Pipeline:
+def train_baseline(texts: list[str], labels: list[str], C: float = 1.0,) -> Pipeline:
     """
     Создаёт и обучает модель классификации отношений.
 
@@ -125,18 +125,18 @@ def train_baseline(texts: list[str], labels: list[str], inverse_regularization_s
     if len(texts) != len(labels):
         raise ValueError("texts and labels must have the same length")
 
-    unknown_labels = list(dict.fromkeys(label) for label in labels if label not in LABELS)
+    unknown_labels = list(dict.fromkeys(label for label in labels if label not in LABELS))
 
     if unknown_labels:
         raise ValueError(f"Unknown labels: {unknown_labels}")
 
     model = Pipeline([("tfidf", TfidfVectorizer(token_pattern=r"\S+", ngram_range=(1, 2))),
-                      ("clf", LogisticRegression(C=inverse_regularization_strength, max_iter=1000, random_state=SEED))])
+                      ("clf", LogisticRegression(C=C, max_iter=1000, random_state=SEED))])
 
     model.fit(texts, labels)
     return model
 
-def predict_baseline(model: Pipeline, texts: list[str],) -> list[str]:
+def predict_baseline(model: Pipeline, texts: list[str]) -> list[str]:
     """
     Получает предсказания обученной модели для переданных текстов.
 

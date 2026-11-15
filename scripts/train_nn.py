@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument("--hidden", type=int, default=100)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--patience", type=int, default=5, help="0 — без ранней остановки")
-    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--seed", type=int, default=RANDOM_STATE)
     return parser.parse_args()
 
 

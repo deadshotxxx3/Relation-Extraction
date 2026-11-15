@@ -1,11 +1,10 @@
-
 import json
+import random
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
-from sklearn.model_selection import train_test_split
-
-from src.relation_extraction.config import LABELS, LABEL_TO_ID, RANDOM_STATE
+from src.relation_extraction.config import RANDOM_STATE
 from src.relation_extraction.data.semeval_loader import SemEvalLoader
 from src.relation_extraction.parsing.parser import Parser
 from src.relation_extraction.pipeline.generate_sample import build_record
@@ -13,14 +12,52 @@ from src.relation_extraction.pipeline.generate_sample import build_record
 
 ROOT = Path(__file__).resolve().parents[1]
 
-TRAIN_PATH = ROOT / "data" / "raw" / "TRAIN_FILE.TXT"
 TEST_PATH = ROOT / "data" / "raw" / "TEST_FILE_FULL.TXT"
-OUTPUT_DIR = ROOT / "data" / "processed"
+OUTPUT_PATH = ROOT / "data" / "processed" / "test_noisy.jsonl"
 
-DEV_SIZE = 800
+NOISE_TEMPLATES = [
+    ", according to the report,",
+    ", which was mentioned earlier,",
+    ", as reported in the study,",
+    ", according to the available information,",
+]
 
-def base_relation(label: str) -> str:
-    return label.split("(", maxsplit=1)[0]
+
+def insert_noise(example, template: str):
+    e1_start, e1_end = example.entity1_span
+    e2_start, e2_end = example.entity2_span
+
+    if e1_start < e2_start:
+        earlier_end = e1_end
+
+        new_e1_span = example.entity1_span
+        new_e2_span = (e2_start + len(template), e2_end + len(template))
+    else:
+        earlier_end = e2_end
+
+        new_e1_span = (e1_start + len(template), e1_end + len(template))
+        new_e2_span = example.entity2_span
+
+    noisy_sentence = (
+        example.sentence[:earlier_end] + template + example.sentence[earlier_end:])
+
+    noisy_example = replace(example, sentence=noisy_sentence,
+        entity1_span=new_e1_span, entity2_span=new_e2_span)
+
+    return noisy_example
+
+
+def get_path_signature(record: dict):
+    if record["sdp"] is None:
+        return None
+
+    tokens = record["tokens"]
+    path = record["sdp"]
+    dependencies = record["sdp_deps"]
+
+    path_words = [tokens[index].casefold() for index in path]
+
+    return tuple(zip(path_words, [None] + dependencies))
 
 
 def write_jsonl(path: Path, records: list[dict]) -> None:
@@ -28,168 +65,90 @@ def write_jsonl(path: Path, records: list[dict]) -> None:
 
     with path.open("w", encoding="utf-8") as file:
         for record in records:
-            file.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def prepare_split(examples, parser, loader):
-    records = []
-    no_path = 0
-    failed_entity_ids = []
-
-    for example in examples:
-        record, entities_ok = build_record(example, parser, loader)
-
-        records.append(record)
-
-        if not entities_ok:
-            failed_entity_ids.append(example.index_of_sent)
-        elif record["sdp"] is None:
-            no_path += 1
-
-    return records, no_path, failed_entity_ids
-
-
-def validate_records(name: str, records: list[dict]) -> None:
-    for record in records:
-        size = len(record["tokens"])
-
-        for field in ("heads", "deprels", "pos"):
-            if len(record[field]) != size:
-                raise ValueError(
-                    f"{name}: example {record['id']}: "
-                    f"len(tokens) != len({field})"
-                )
-
-        label = record["label"]
-
-        if label not in LABEL_TO_ID:
-            raise ValueError(
-                f"{name}: unknown label {label!r} "
-                f"for example {record['id']}"
-            )
-
-        if record["label_id"] != LABEL_TO_ID[label]:
-            raise ValueError(
-                f"{name}: incorrect label_id for example {record['id']}"
-            )
-
-        if record["label_id"] not in range(len(LABELS)):
-            raise ValueError(
-                f"{name}: invalid label_id {record['label_id']} "
-                f"for example {record['id']}"
+            file.write(
+                json.dumps(record, ensure_ascii=False) + "\n"
             )
 
 
-def print_statistics(
-    name: str,
-    records: list[dict],
-    no_path: int,
-    failed_entity_ids: list[int],
-) -> None:
-    sentence_lengths = [
-        len(record["tokens"])
-        for record in records
-    ]
-
-    path_lengths = [
-        len(record["sdp"])
-        for record in records
-        if record["sdp"] is not None
-    ]
-
-    distribution = Counter(path_lengths)
-
-    average_sentence = 0
-    average_path = 0
-
-    if sentence_lengths:
-        average_sentence = sum(sentence_lengths) / len(sentence_lengths)
-
-    if path_lengths:
-        average_path = sum(path_lengths) / len(path_lengths)
-
-    print(f"\n{name}:")
-    print(f"  Примеров: {len(records)}")
-    print(f"  Без shortest dependency path: {no_path}")
-    print(f"  Не удалось найти токены сущностей: {len(failed_entity_ids)}")
-    print(f"  Средняя длина предложения (токены): {average_sentence:.2f}")
-    print(f"  Средняя длина пути (вершины): {average_path:.2f}")
-
-    print("  Распределение длины пути (вершины):")
-
-    for length in sorted(distribution):
-        print(f"    {length}: {distribution[length]}")
-
-
-def main() -> None:
+def main():
     loader = SemEvalLoader()
     parser = Parser()
+    rng = random.Random(RANDOM_STATE)
 
-    train_examples = loader.load_file(str(TRAIN_PATH))
-    test_examples = loader.load_file(str(TEST_PATH))
+    examples = loader.load_file(str(TEST_PATH))
 
-    if len(train_examples) <= DEV_SIZE:
-        raise ValueError(
-            "Количество обучающих примеров должно быть больше размера DEV"
-        )
+    noisy_records = []
 
-    stratify_labels = [
-        base_relation(example.relation)
-        for example in train_examples
-    ]
+    original_no_path = 0
+    noisy_no_path = 0
 
-    train_examples, dev_examples = train_test_split(
-        train_examples,
-        test_size=DEV_SIZE,
-        random_state=RANDOM_STATE,
-        stratify=stratify_labels,
-    )
+    original_failed = 0
+    noisy_failed = 0
 
-    splits = {
-        "train": train_examples,
-        "dev": dev_examples,
-        "test": test_examples,
-    }
+    comparable = 0
+    unchanged = 0
 
-    print(f"Количество меток: {len(LABELS)}")
-    print(f"Random state: {RANDOM_STATE}")
+    template_usage = Counter()
 
-    print(
-        f"Разбиение: train={len(train_examples)}, "
-        f"dev={len(dev_examples)}, "
-        f"train + dev={len(train_examples) + len(dev_examples)}, "
-        f"test={len(test_examples)}"
-    )
+    for example in examples:
+        original_record, original_ok = build_record(example, parser, loader)
 
-    for split_name, examples in splits.items():
-        records, no_path, failed_entity_ids = prepare_split(
-            examples,
-            parser,
-            loader,
-        )
+        if not original_ok:
+            original_failed += 1
+        elif original_record["sdp"] is None:
+            original_no_path += 1
 
-        validate_records(split_name, records)
+        template = rng.choice(NOISE_TEMPLATES)
+        template_usage[template] += 1
 
-        output_path = OUTPUT_DIR / f"{split_name}.jsonl"
-        write_jsonl(output_path, records)
+        noisy_example = insert_noise(example, template)
 
-        print(f"\nСохранено: {output_path}")
+        noisy_record, noisy_ok = build_record(noisy_example, parser, loader)
 
-        print_statistics(
-            split_name,
-            records,
-            no_path,
-            failed_entity_ids,
-        )
+        noisy_records.append(noisy_record)
 
-    print("\nВсе проверки успешно пройдены.")
-    print("  Проверены label_id и соответствие меток.")
-    print("  Проверены длины tokens, heads, deprels и pos.")
-    print(
-        f"  Общее количество train и dev: "
-        f"{len(train_examples) + len(dev_examples)}"
-    )
-    print(f"  Количество test: {len(test_examples)}")
+        if not noisy_ok:
+            noisy_failed += 1
+        elif noisy_record["sdp"] is None:
+            noisy_no_path += 1
+
+        if (original_ok and noisy_ok
+            and original_record["sdp"] is not None
+            and noisy_record["sdp"] is not None):
+            comparable += 1
+
+            original_signature = get_path_signature(original_record)
+            noisy_signature = get_path_signature(noisy_record)
+
+            if original_signature == noisy_signature:
+                unchanged += 1
+
+    write_jsonl(OUTPUT_PATH, noisy_records)
+
+    changed = comparable - unchanged
+
+    robustness = (unchanged / comparable * 100 if comparable > 0 else 0)
+
+    print("\nСтресс-тест завершён.")
+    print(f"Всего предложений: {len(examples)}")
+    print(f"Сохранено предложений: {len(noisy_records)}")
+    print(f"Файл: {OUTPUT_PATH}")
+
+    print("\nСтатистика построения SDP:")
+    print(f"  Нет SDP в исходных предложениях: {original_no_path}")
+    print(f"  Нет SDP в изменённых предложениях: {noisy_no_path}")
+    print(f"  Ошибки определения сущностей (исходные): {original_failed}")
+    print(f"  Ошибки определения сущностей (изменённые): {noisy_failed}")
+
+    print("\nСравнение кратчайших путей:")
+    print(f"  Предложений, пригодных для сравнения: {comparable}")
+    print(f"  SDP не изменился: {unchanged}")
+    print(f"  SDP изменился: {changed}")
+    print(f"  Устойчивость SDP: {robustness:.2f}%")
+
+    print("\nИспользование шаблонов:")
+    for template, count in template_usage.items():
+        print(f"  {template}: {count}")
 
 
 if __name__ == "__main__":

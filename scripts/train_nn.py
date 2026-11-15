@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from src.relation_extraction.config import LABELS, SEED
+from src.relation_extraction.config import LABELS, RANDOM_STATE
 from src.relation_extraction.evaluate import evaluate
 from src.relation_extraction.nn.bilstm import BiLSTMClassifier
 from src.relation_extraction.nn.data_utils import build_vocab, load_jsonl

@@ -1,3 +1,4 @@
+"""Точка входа: генерирует tests/sample.jsonl из SemEval TRAIN_FILE.TXT."""
 from src.relation_extraction.pipeline.generate_sample import generate_sample
 
 

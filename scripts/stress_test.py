@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
-from src.relation_extraction.config import RANDOM_STATE
+from src.relation_extraction.config import SEED
 from src.relation_extraction.data.semeval_loader import SemEvalLoader
 from src.relation_extraction.parsing.parser import Parser
 from src.relation_extraction.pipeline.generate_sample import build_record
@@ -38,8 +38,8 @@ def insert_noise(example, template: str):
         new_e1_span = (e1_start + len(template), e1_end + len(template))
         new_e2_span = example.entity2_span
 
-    noisy_sentence = (example.sentence[:earlier_end]
-        + template + example.sentence[earlier_end:])
+    noisy_sentence = (
+        example.sentence[:earlier_end] + template + example.sentence[earlier_end:])
 
     noisy_example = replace(example, sentence=noisy_sentence,
         entity1_span=new_e1_span, entity2_span=new_e2_span)
@@ -65,57 +65,15 @@ def write_jsonl(path: Path, records: list[dict]) -> None:
 
     with path.open("w", encoding="utf-8") as file:
         for record in records:
-            file.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def format_path(record: dict) -> str:
-    if record["sdp"] is None:
-        return "SDP отсутствует"
-
-    tokens = record["tokens"]
-    path = record["sdp"]
-    dependencies = record["sdp_deps"]
-
-    result = [tokens[path[0]]]
-
-    for dependency, token_index in zip(dependencies, path[1:]):
-        result.append(f"-[{dependency}]-")
-        result.append(tokens[token_index])
-
-    return " ".join(result)
-
-
-def print_no_path_diagnostics(record: dict):
-    print("\n" + "=" * 70)
-    print(f"ДИАГНОСТИКА: SDP ОТСУТСТВУЕТ (ID: {record['id']})")
-    print("=" * 70)
-
-    print("Предложение:")
-    print(record["sentence"])
-
-    print("\nТокены и зависимости:")
-
-    for i, token in enumerate(record["tokens"]):
-        print(
-            f"{i:2} | "
-            f"{token:15} | "
-            f"head={record['heads'][i]:2} | "
-            f"dep={record['deprels'][i]:12} | "
-            f"pos={record['pos'][i]}"
-        )
-
-    print("\nИндексы сущностей:")
-    print("e1:", record["e1"])
-    print("e2:", record["e2"])
-
-    print("\nSDP:", record["sdp"])
-    print("=" * 70)
+            file.write(
+                json.dumps(record, ensure_ascii=False) + "\n"
+            )
 
 
 def main():
     loader = SemEvalLoader()
     parser = Parser()
-    rng = random.Random(RANDOM_STATE)
+    rng = random.Random(SEED)
 
     examples = loader.load_file(str(TEST_PATH))
 
@@ -129,9 +87,6 @@ def main():
 
     comparable = 0
     unchanged = 0
-
-    changed_examples = []
-    no_path_examples = []
 
     template_usage = Counter()
 
@@ -157,47 +112,16 @@ def main():
         elif noisy_record["sdp"] is None:
             noisy_no_path += 1
 
-        if noisy_record["sdp"] is None:
-            no_path_examples.append({
-                "id": noisy_record["id"],
-                "sentence": noisy_example.sentence,
-                "tokens": noisy_record["tokens"],
-                "heads": noisy_record["heads"],
-                "deprels": noisy_record["deprels"],
-                "pos": noisy_record["pos"],
-                "e1": noisy_record["e1"],
-                "e2": noisy_record["e2"],
-                "template": template,
-                "original_sentence": example.sentence,
-                "original_path": format_path(original_record),
-            })
-
-        if (
-                original_ok
-                and noisy_ok
-                and original_record["sdp"] is not None
-                and noisy_record["sdp"] is not None
-        ):
+        if (original_ok and noisy_ok
+            and original_record["sdp"] is not None
+            and noisy_record["sdp"] is not None):
             comparable += 1
 
-            original_signature = get_path_signature(
-                original_record
-            )
-            noisy_signature = get_path_signature(
-                noisy_record
-            )
+            original_signature = get_path_signature(original_record)
+            noisy_signature = get_path_signature(noisy_record)
 
             if original_signature == noisy_signature:
                 unchanged += 1
-            else:
-                changed_examples.append({
-                    "id": example.index_of_sent,
-                    "template": template,
-                    "original_sentence": example.sentence,
-                    "noisy_sentence": noisy_example.sentence,
-                    "original_path": format_path(original_record),
-                    "noisy_path": format_path(noisy_record),
-                })
 
     write_jsonl(OUTPUT_PATH, noisy_records)
 
@@ -225,38 +149,6 @@ def main():
     print("\nИспользование шаблонов:")
     for template, count in template_usage.items():
         print(f"  {template}: {count}")
-
-    print("\n" + "=" * 70)
-    print("ПРИМЕРЫ, В КОТОРЫХ SDP ИЗМЕНИЛСЯ")
-    print("=" * 70)
-
-    for example in changed_examples[:5]:
-        print(f"\nID: {example['id']}")
-        print(f"Шаблон: {example['template']}")
-
-        print(f"Исходное предложение:")
-        print(example["original_sentence"])
-
-        print(f"Изменённое предложение:")
-        print(example["noisy_sentence"])
-
-        print(f"Исходный SDP:")
-        print(example["original_path"])
-
-        print(f"Новый SDP:")
-        print(example["noisy_path"])
-
-        print("-" * 70)
-
-    print("\n" + "=" * 70)
-    print("ПРИМЕРЫ БЕЗ SDP")
-    print("=" * 70)
-
-    if not no_path_examples:
-        print("Таких предложений нет.")
-    else:
-        for example in no_path_examples:
-            print_no_path_diagnostics(example)
 
 
 if __name__ == "__main__":

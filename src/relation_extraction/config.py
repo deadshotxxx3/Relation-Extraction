@@ -1,4 +1,4 @@
-RANDOM_STATE = 42
+SEED = 42
 
 LABELS = [
     "Other",

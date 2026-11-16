@@ -1,6 +1,4 @@
-import json
 import random
-from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
@@ -8,6 +6,9 @@ from src.relation_extraction.config import SEED
 from src.relation_extraction.data.semeval_loader import SemEvalLoader
 from src.relation_extraction.parsing.parser import Parser
 from src.relation_extraction.pipeline.generate_sample import build_record
+from src.relation_extraction.models.stress_stats import StressStats
+
+from prepare_data import write_jsonl
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,15 @@ NOISE_TEMPLATES = [
     ", according to the available information,",
 ]
 
+QUOTE_CHARS = frozenset({
+    '"', "'",                  # ASCII
+    "\u2018", "\u2019",        # ' '
+    "\u201c", "\u201d",        # " "
+    "\u00ab", "\u00bb",        # « »
+    "\u201e",                  # „
+})
+
+
 
 def insert_noise(example, template: str):
     e1_start, e1_end = example.entity1_span
@@ -29,22 +39,35 @@ def insert_noise(example, template: str):
 
     if e1_start < e2_start:
         earlier_end = e1_end
-
-        new_e1_span = example.entity1_span
-        new_e2_span = (e2_start + len(template), e2_end + len(template))
+        shift_entity2 = True
     else:
         earlier_end = e2_end
+        shift_entity2 = False
 
-        new_e1_span = (e1_start + len(template), e1_end + len(template))
+    next_char = example.sentence[earlier_end:earlier_end + 1]
+
+    if next_char in QUOTE_CHARS:
+        return example, True
+
+    if next_char == "," and template.endswith(","):
+        template = template[:-1]
+
+    delta = len(template)
+
+    if shift_entity2:
+        new_e1_span = example.entity1_span
+        new_e2_span = (e2_start + delta, e2_end + delta)
+    else:
+        new_e1_span = (e1_start + delta, e1_end + delta)
         new_e2_span = example.entity2_span
 
-    noisy_sentence = (
-        example.sentence[:earlier_end] + template + example.sentence[earlier_end:])
+    noisy_sentence = (example.sentence[:earlier_end]
+        + template + example.sentence[earlier_end:])
 
     noisy_example = replace(example, sentence=noisy_sentence,
         entity1_span=new_e1_span, entity2_span=new_e2_span)
 
-    return noisy_example
+    return noisy_example, False
 
 
 def get_path_signature(record: dict):
@@ -60,95 +83,91 @@ def get_path_signature(record: dict):
     return tuple(zip(path_words, [None] + dependencies))
 
 
-def write_jsonl(path: Path, records: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def run_stress_test(examples, parser, loader, rng) -> tuple[list[dict], StressStats]:
+    noisy_records = []
+    stats = StressStats()
 
-    with path.open("w", encoding="utf-8") as file:
-        for record in records:
-            file.write(
-                json.dumps(record, ensure_ascii=False) + "\n"
-            )
+    for example in examples:
+        original_record, original_ok = build_record(example, parser, loader)
+
+        if not original_ok:
+            stats.original_failed += 1
+        elif original_record["sdp"] is None:
+            stats.original_no_path += 1
+
+        template = rng.choice(NOISE_TEMPLATES)
+        stats.template_usage[template] += 1
+
+        noisy_example, skipped = insert_noise(example, template)
+        if skipped:
+            stats.insertion_skipped += 1
+
+        noisy_record, noisy_ok = build_record(noisy_example, parser, loader)
+        noisy_records.append(noisy_record)
+
+        if skipped:
+            continue
+
+        if not noisy_ok:
+            stats.noisy_failed += 1
+        elif noisy_record["sdp"] is None:
+            stats.noisy_no_path += 1
+
+        if (original_ok and noisy_ok
+                and original_record["sdp"] is not None
+                and noisy_record["sdp"] is not None):
+            stats.comparable += 1
+
+            original_signature = get_path_signature(original_record)
+            noisy_signature = get_path_signature(noisy_record)
+
+            if original_signature == noisy_signature:
+                stats.unchanged += 1
+
+    return noisy_records, stats
 
 
-def main():
+def print_report(stats: StressStats, total: int, output_path: Path) -> None:
+    changed = stats.comparable - stats.unchanged
+    robustness = (
+        stats.unchanged / stats.comparable * 100
+        if stats.comparable > 0 else 0
+    )
+
+    print("\nСтресс-тест завершён.")
+    print(f"Всего предложений: {total}")
+    print(f"Вставка пропущена (пунктуация после сущности): {stats.insertion_skipped}")
+    print(f"Сохранено предложений: {total}")
+    print(f"Файл: {output_path}")
+
+    print("\nСтатистика построения SDP:")
+    print(f"  Нет SDP в исходных предложениях: {stats.original_no_path}")
+    print(f"  Нет SDP в изменённых предложениях: {stats.noisy_no_path}")
+    print(f"  Ошибки определения сущностей (исходные): {stats.original_failed}")
+    print(f"  Ошибки определения сущностей (изменённые): {stats.noisy_failed}")
+
+    print("\nСравнение кратчайших путей (пропущенные вставки не учитываются):")
+    print(f"  Предложений, пригодных для сравнения: {stats.comparable}")
+    print(f"  SDP не изменился: {stats.unchanged}")
+    print(f"  SDP изменился: {changed}")
+    print(f"  Устойчивость SDP: {robustness:.2f}%")
+
+    print("\nИспользование шаблонов:")
+    for template, count in stats.template_usage.items():
+        print(f"  {template}: {count}")
+
+
+def main() -> None:
     loader = SemEvalLoader()
     parser = Parser()
     rng = random.Random(SEED)
 
     examples = loader.load_file(str(TEST_PATH))
 
-    noisy_records = []
-
-    original_no_path = 0
-    noisy_no_path = 0
-
-    original_failed = 0
-    noisy_failed = 0
-
-    comparable = 0
-    unchanged = 0
-
-    template_usage = Counter()
-
-    for example in examples:
-        original_record, original_ok = build_record(example, parser, loader)
-
-        if not original_ok:
-            original_failed += 1
-        elif original_record["sdp"] is None:
-            original_no_path += 1
-
-        template = rng.choice(NOISE_TEMPLATES)
-        template_usage[template] += 1
-
-        noisy_example = insert_noise(example, template)
-
-        noisy_record, noisy_ok = build_record(noisy_example, parser, loader)
-
-        noisy_records.append(noisy_record)
-
-        if not noisy_ok:
-            noisy_failed += 1
-        elif noisy_record["sdp"] is None:
-            noisy_no_path += 1
-
-        if (original_ok and noisy_ok
-            and original_record["sdp"] is not None
-            and noisy_record["sdp"] is not None):
-            comparable += 1
-
-            original_signature = get_path_signature(original_record)
-            noisy_signature = get_path_signature(noisy_record)
-
-            if original_signature == noisy_signature:
-                unchanged += 1
+    noisy_records, stats = run_stress_test(examples, parser, loader, rng)
 
     write_jsonl(OUTPUT_PATH, noisy_records)
-
-    changed = comparable - unchanged
-
-    robustness = (unchanged / comparable * 100 if comparable > 0 else 0)
-
-    print("\nСтресс-тест завершён.")
-    print(f"Всего предложений: {len(examples)}")
-    print(f"Сохранено предложений: {len(noisy_records)}")
-    print(f"Файл: {OUTPUT_PATH}")
-
-    print("\nСтатистика построения SDP:")
-    print(f"  Нет SDP в исходных предложениях: {original_no_path}")
-    print(f"  Нет SDP в изменённых предложениях: {noisy_no_path}")
-    print(f"  Ошибки определения сущностей (исходные): {original_failed}")
-    print(f"  Ошибки определения сущностей (изменённые): {noisy_failed}")
-
-    print("\nСравнение кратчайших путей:")
-    print(f"  Предложений, пригодных для сравнения: {comparable}")
-    print(f"  SDP не изменился: {unchanged}")
-    print(f"  SDP изменился: {changed}")
-    print(f"  Устойчивость SDP: {robustness:.2f}%")
-
-    print("\nИспользование шаблонов:")
-    for template, count in template_usage.items():
-        print(f"  {template}: {count}")
+    print_report(stats, total=len(examples), output_path=OUTPUT_PATH)
 
 
 if __name__ == "__main__":

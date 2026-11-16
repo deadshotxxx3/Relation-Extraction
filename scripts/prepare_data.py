@@ -73,7 +73,6 @@ def validate_records(name: str, records: list[dict]) -> None:
             )
 
 
-
 def print_statistics(
     name: str,
     records: list[dict],

@@ -8,7 +8,7 @@ from src.relation_extraction.parsing.parser import Parser
 from src.relation_extraction.pipeline.generate_sample import build_record
 from src.relation_extraction.models.stress_stats import StressStats
 
-from prepare_data import write_jsonl
+from scripts.prepare_data import write_jsonl
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +30,6 @@ QUOTE_CHARS = frozenset({
     "\u00ab", "\u00bb",        # « »
     "\u201e",                  # „
 })
-
 
 
 def insert_noise(example, template: str):

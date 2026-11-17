@@ -6,3 +6,4 @@ env/
 /results/
 *.py[cod]
 .pytest_cache/
+data/processed/

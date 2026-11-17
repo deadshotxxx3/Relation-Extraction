@@ -11,12 +11,13 @@ def make_example(
     entity1_span: tuple[int, int],
     entity2_span: tuple[int, int],
 ) -> SemEvalExample:
-
     return SemEvalExample(
         index_of_sent=0,
         sentence=sentence,
         entity1_span=entity1_span,
         entity2_span=entity2_span,
+        entity1=sentence[entity1_span[0]:entity1_span[1]],
+        entity2=sentence[entity2_span[0]:entity2_span[1]],
         relation="Other",
     )
 

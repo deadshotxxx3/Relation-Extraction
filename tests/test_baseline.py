@@ -295,4 +295,3 @@ class TestRunBaseline:
 
         output = capsys.readouterr().out
         assert "Selected C =" in output
-        

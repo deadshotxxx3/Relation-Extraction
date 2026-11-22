@@ -24,6 +24,7 @@ MODEL_ORDER = [
 DEFAULT_MODELS = [
     "baseline_sentence",
     "baseline_sdp",
+    "bilstm_sentence",
     "bilstm_sdp",
 ]
 
@@ -92,7 +93,7 @@ def build_table(results: dict) -> str:
     F1 уже хранится в процентах.
     Accuracy переводится из доли в проценты.
     """
-    names = model_order(name for name, split in results)
+    names = model_order(name for name, split in results if split in ("test", "test_noisy"))
     headers = [
         "Модель",
         "F1 test",
@@ -283,7 +284,9 @@ def main(argv=None) -> None:
     args = parser.parse_args(argv)
 
     results_dir = Path(args.results)
-    results_dir.mkdir(parents=True, exist_ok=True)
+
+    if not results_dir.is_dir():
+        parser.error(f"Results directory does not exist: {results_dir}")
 
     results = load_results(results_dir)
 

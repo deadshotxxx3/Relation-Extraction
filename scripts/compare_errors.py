@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from collections import Counter
 import re
+import argparse
 
 
 def load_preds(path: str | Path) -> dict[int | str, tuple[str, str]]:
@@ -239,3 +240,99 @@ def write_examples(ids: tuple[list[int | str], list[int | str]], data_path: str 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Сравнение предсказаний двух моделей"
+    )
+
+    parser.add_argument(
+        "--a",
+        required=True,
+        help="Имя первой модели"
+    )
+
+    parser.add_argument(
+        "--b",
+        required=True,
+        help="Имя второй модели"
+    )
+
+    parser.add_argument(
+        "--split-a",
+        default="test",
+        help="Выборка первой модели"
+    )
+
+    parser.add_argument(
+        "--split-b",
+        default="test",
+        help="Выборка второй модели"
+    )
+
+    parser.add_argument(
+        "--data",
+        required=True,
+        type=Path,
+        help="JSONL-файл с исходными примерами"
+    )
+
+    args = parser.parse_args()
+
+    preds_path_a = (
+        Path("results") /
+        f"{args.a}_{args.split_a}_preds.jsonl"
+    )
+
+    preds_path_b = (
+        Path("results") /
+        f"{args.b}_{args.split_b}_preds.jsonl"
+    )
+
+    preds_a = load_preds(preds_path_a)
+    preds_b = load_preds(preds_path_b)
+    print(f"{args.a}: загружено {len(preds_a)} предсказаний")
+    print(f"{args.b}: загружено {len(preds_b)} предсказаний")
+
+    both_right, only_a, only_b, both_wrong = compare(preds_a, preds_b)
+
+    print("\nРезультаты сравнения:")
+    print(f"Обе модели правы: {len(both_right)}")
+    print(f"Только {args.a} права: {len(only_a)}")
+    print(f"Только {args.b} права: {len(only_b)}")
+    print(f"Обе модели ошиблись: {len(both_wrong)}")
+
+    confusions_a = top_confusions(preds_a)
+    confusions_b = top_confusions(preds_b)
+    print(f"\nТоп ошибок модели {args.a}:")
+
+    for gold, pred, count in confusions_a:
+        print(f"{gold} -> {pred}: {count}")
+
+    print(f"\nТоп ошибок модели {args.b}:")
+
+    for gold, pred, count in confusions_b:
+        print(f"{gold} -> {pred}: {count}")
+
+    report_path = (
+        Path("results") /
+        f"errors_{args.a}_vs_{args.b}.md"
+    )
+
+    write_examples(
+        (only_a, only_b),
+        args.data,
+        preds_a,
+        preds_b,
+        args.a,
+        args.b,
+        report_path,
+        limit=10
+    )
+
+    print(f"\nОтчёт сохранён: {report_path}")
+
+
+if __name__ == "__main__":
+    main()

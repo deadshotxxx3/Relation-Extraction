@@ -12,6 +12,8 @@ def build_record(
     example: SemEvalExample,
     parser: Parser,
     loader: SemEvalLoader,
+    *,
+    include_offsets: bool = False,
 ) -> tuple[dict, bool]:
     label = example.relation
     if label not in LABEL_TO_ID:
@@ -66,6 +68,8 @@ def build_record(
         "sdp": sdp,
         "sdp_deps": sdp_deps,
     }
+    if include_offsets:
+        record["offsets"] = [token.sentence_index for token in tokens]
     return record, entities_ok
 
 

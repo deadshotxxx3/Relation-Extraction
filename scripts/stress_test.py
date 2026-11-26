@@ -230,7 +230,7 @@ def main() -> None:
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     model_size = args.spacy_model.rsplit("_", 1)[-1]
-    examples_path = RESULTS_DIR / f"stress_examples({model_size}).md"
+    examples_path = RESULTS_DIR / f"stress_examples_{model_size}.md"
     header = f"# Изменения SDP · {args.spacy_model}"
     examples_path.write_text(
         "\n\n".join([header, *stats.examples]) + "\n",

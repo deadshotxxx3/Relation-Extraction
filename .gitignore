@@ -7,3 +7,5 @@ env/
 *.py[cod]
 .pytest_cache/
 data/processed/
+/models/
+/data/glove/

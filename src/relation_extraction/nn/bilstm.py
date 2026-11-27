@@ -3,6 +3,21 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
+def make_embedding(vocab_size, emb_dim, embeddings):
+    """Слой эмбеддингов: случайный или заполненный готовой матрицей (GloVe)."""
+    layer = nn.Embedding(vocab_size, emb_dim, padding_idx=0)
+    if embeddings is not None:
+        weights = torch.tensor(embeddings, dtype=torch.float)
+        if tuple(weights.shape) != (vocab_size, emb_dim):
+            raise ValueError(
+                "embeddings shape " + str(tuple(weights.shape))
+                + " does not match " + str((vocab_size, emb_dim))
+            )
+        with torch.no_grad():
+            layer.weight.copy_(weights)
+    return layer
+
+
 def real_mask(ids, lengths):
     """Маска [B, T]: True там, где настоящее слово, False — где дописан <pad>."""
     positions = torch.arange(ids.shape[1], device=ids.device).unsqueeze(0)
@@ -43,17 +58,18 @@ def pool_and_classify(h, real, e1, e2, dropout, out_layer):
 class BiLSTMClassifier(nn.Module):
     """BiLSTM-классификатор отношений.
 
-    vocab_size - размер словаря, n_classes - число классов (19)."""
+    vocab_size - размер словаря, n_classes - число классов (19),
+    embeddings - готовая матрица эмбеддингов (GloVe) или None."""
 
     def __init__(self, vocab_size, n_classes, emb_dim=100, hidden=100,
-                 dropout=0.5):
+                 dropout=0.5, embeddings=None):
         super().__init__()
-        self.emb = nn.Embedding(vocab_size, emb_dim, padding_idx=0)
+        self.emb = make_embedding(vocab_size, emb_dim, embeddings)
         self.lstm = nn.LSTM(emb_dim, hidden, batch_first=True, bidirectional=True)
         self.dropout = nn.Dropout(dropout)
         self.out = nn.Linear(3 * 2 * hidden, n_classes)
 
-    def forward(self, ids, lengths, e1, e2):
+    def forward(self, ids, lengths, e1, e2, adj=None):
         real = real_mask(ids, lengths)
         x = self.dropout(self.emb(ids))
         h = run_lstm(self.lstm, x, lengths)

@@ -15,13 +15,17 @@ def get_device():
 
 
 def split_batch(batch, device):
-    """Разбирает пачку из collate на входы модели и метки."""
+    """Разбирает пачку из collate или collate_gcn на входы модели и метки.
+    Для collate матрицы смежности нет, тогда adj = None."""
     ids = batch[0].to(device)
     lengths = batch[1]
     e1 = batch[2].to(device)
     e2 = batch[3].to(device)
     labels = batch[4].to(device)
-    return ids, lengths, e1, e2, labels
+    adj = None
+    if len(batch) == 6:
+        adj = batch[5].to(device)
+    return ids, lengths, e1, e2, adj, labels
 
 
 def run_epoch(model, loader, loss_fn, optimizer=None, device="cpu", clip=5.0):
@@ -35,11 +39,11 @@ def run_epoch(model, loader, loss_fn, optimizer=None, device="cpu", clip=5.0):
     total_loss = 0.0
     count = 0
     for batch in loader:
-        ids, lengths, e1, e2, labels = split_batch(batch, device)
+        ids, lengths, e1, e2, adj, labels = split_batch(batch, device)
         if training:
             optimizer.zero_grad()
         with torch.set_grad_enabled(training):
-            logits = model(ids, lengths, e1, e2)
+            logits = model(ids, lengths, e1, e2, adj)
             loss = loss_fn(logits, labels)
         if training:
             loss.backward()
@@ -56,8 +60,8 @@ def predict(model, loader, device="cpu"):
     result = []
     with torch.no_grad():
         for batch in loader:
-            ids, lengths, e1, e2, labels = split_batch(batch, device)
-            logits = model(ids, lengths, e1, e2)
+            ids, lengths, e1, e2, adj, labels = split_batch(batch, device)
+            logits = model(ids, lengths, e1, e2, adj)
             for label_id in logits.argmax(dim=-1).tolist():
                 result.append(LABELS[label_id])
     return result
@@ -80,7 +84,7 @@ def train(model, train_loader, dev_loader, epochs=30, lr=1e-3, weight_decay=0.01
 
     Лучшая эпоха выбирается по официальному macro-F1 SemEval на dev.
     Если F1 не растёт patience эпох подряд, обучение останавливается
-    (patience = 0 — учить все epochs эпох).
+    (patience = 0 - учить все epochs эпох).
     dev_loader должен идти без перемешивания (shuffle=False), его dataset - REDataset.
     Возвращает историю: список словарей по эпохам."""
     model.to(device)

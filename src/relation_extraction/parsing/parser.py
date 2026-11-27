@@ -4,8 +4,8 @@ from src.relation_extraction.models.dependency import Dependency
 
 
 class Parser:
-    def __init__(self):
-        self.nlp = spacy.load("en_core_web_sm")
+    def __init__(self, model: str = "en_core_web_sm"):
+        self.nlp = spacy.load(model)
 
     def parse(self, text: str) -> tuple[list[Token], list[Dependency]]:
         doc = self.nlp(text)

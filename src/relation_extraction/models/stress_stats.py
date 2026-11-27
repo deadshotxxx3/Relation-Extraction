@@ -12,3 +12,8 @@ class StressStats:
     unchanged: int = 0
     insertion_skipped: int = 0
     template_usage: Counter = field(default_factory=Counter)
+    unchanged_words: int = 0
+    changed_through_insert: int = 0
+    template_comparable: Counter = field(default_factory=Counter)
+    template_unchanged: Counter = field(default_factory=Counter)
+    examples: list[str] = field(default_factory=list)

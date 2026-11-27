@@ -8,8 +8,6 @@ from src.relation_extraction.baseline import (
     predict_baseline,
 )
 
-from src.relation_extraction.evaluate import evaluate
-
 
 MODES = ["sentence", "sdp", "sdp_deps"]
 C_VALUES = [0.1, 1, 10]
@@ -26,7 +24,7 @@ def run_baselines(mode, train_path, dev_path, test_paths, C):
         dev_path, mode
     )
 
-    best_C = C
+    best_C = None
     best_score = -1.0
     best_model = None
     

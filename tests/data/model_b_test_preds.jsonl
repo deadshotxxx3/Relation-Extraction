@@ -1,0 +1,5 @@
+{"id": 1, "gold": "Cause-Effect(e1,e2)", "pred": "Cause-Effect(e1,e2)"}
+{"id": 2, "gold": "Instrument-Agency(e1,e2)", "pred": "Other"}
+{"id": 3, "gold": "Component-Whole(e1,e2)", "pred": "Component-Whole(e1,e2)"}
+{"id": 4, "gold": "Component-Whole(e1,e2)", "pred": "Other"}
+{"id": 5, "gold": "Member-Collection(e1,e2)", "pred": "Other"}

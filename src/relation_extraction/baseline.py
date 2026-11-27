@@ -102,7 +102,7 @@ def load_split(path: str | Path, mode: str) -> tuple[list[int | str], list[str],
     return ids, texts, labels
 
 
-def train_baseline(texts: list[str], labels: list[str], C: float = 1.0,) -> Pipeline:
+def train_baseline(texts: list[str], labels: list[str], C: float = 1.0) -> Pipeline:
     """
     Создаёт и обучает модель классификации отношений.
 

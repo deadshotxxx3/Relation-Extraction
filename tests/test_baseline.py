@@ -11,7 +11,7 @@ from src.relation_extraction.baseline import (
     predict_baseline,
 )
 
-from src.relation_extraction.evaluate import evaluate, official_f1
+from src.relation_extraction.evaluate import official_f1
 import shutil
 from scripts.run_baseline import main
 

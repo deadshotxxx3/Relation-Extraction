@@ -3,7 +3,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from src.relation_extraction.nn.data_utils import build_vocab, load_jsonl
-from src.relation_extraction.nn.dataset import REDataset, collate
+from src.relation_extraction.nn.dataset import REDataset, collate, collate_gcn
 
 SAMPLE_PATH = "tests/sample.jsonl"
 
@@ -34,6 +34,29 @@ class TestCollate:
         assert labels.tolist() == [3, 0]
 
 
+class TestCollateGcn:
+    """collate_gcn: пачка вместе с матрицами смежности."""
+
+    batch = [
+        ([5, 6, 7], [True, False, False], [False, False, True], 3, [[0, 1, 0], [1, 0, 1], [0, 1, 0]]),
+        ([8, 9], [True, False], [False, True], 0, [[0, 1], [1, 0]]),
+    ]
+
+    def test_first_five_parts_same_as_collate(self):
+        plain = collate(self.batch)
+        result = collate_gcn(self.batch)
+        for k in range(5):
+            assert result[k].tolist() == plain[k].tolist()
+
+    def test_adjacency_shape(self):
+        result = collate_gcn(self.batch)
+        assert tuple(result[5].shape) == (2, 3, 3)
+
+    def test_adjacency_padded_with_zeros(self):
+        result = collate_gcn(self.batch)
+        assert result[5][1].tolist() == [[0, 1, 0], [1, 0, 0], [0, 0, 0]]
+
+
 class TestREDataset:
     """REDataset: примеры sample.jsonl в виде номеров слов и масок."""
 
@@ -45,15 +68,17 @@ class TestREDataset:
         assert len(REDataset(SAMPLE_PATH, vocab, "sentence")) == 20
 
     def test_sdp_item(self, vocab):
-        ids, e1, e2, label = REDataset(SAMPLE_PATH, vocab, "sdp")[0]
+        ids, e1, e2, label, adj = REDataset(SAMPLE_PATH, vocab, "sdp")[0]
         assert len(ids) == 3
         assert e1 == [True, False, False]
         assert e2 == [False, False, True]
         assert label == 4
+        assert adj == [[0, 1, 0], [1, 0, 1], [0, 1, 0]]
 
     def test_sentence_item_length(self, vocab):
-        ids, e1, e2, label = REDataset(SAMPLE_PATH, vocab, "sentence")[0]
+        ids, e1, e2, label, adj = REDataset(SAMPLE_PATH, vocab, "sentence")[0]
         assert len(ids) == 17
+        assert len(adj) == 17
 
     def test_gold_labels_and_ids(self, vocab):
         dataset = REDataset(SAMPLE_PATH, vocab, "sentence")

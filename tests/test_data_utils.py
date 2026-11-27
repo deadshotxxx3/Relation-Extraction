@@ -6,6 +6,8 @@ from src.relation_extraction.nn.data_utils import (
     build_vocab,
     encode,
     entity_masks,
+    build_adjacency,
+    load_glove,
 )
 
 SAMPLE_PATH = "tests/sample.jsonl"
@@ -98,3 +100,63 @@ class TestEntityMasks:
         e1, e2 = entity_masks(ex, select_positions(ex, "sentence"))
         assert sum(e1) + sum(e2) == len(ex["e1"]) + len(ex["e2"])
         assert max(sum(e1), sum(e2)) == 2
+
+
+class TestBuildAdjacency:
+    """build_adjacency: матрица смежности дерева для GCN."""
+
+    def test_sentence_mode_is_whole_tree(self, rows):
+        ex = rows[0]
+        adj = build_adjacency(ex, select_positions(ex, "sentence"))
+        edges = sum(sum(row) for row in adj)
+        assert edges == 2 * (len(ex["tokens"]) - 1)
+
+    def test_symmetric_without_self_loops(self, rows):
+        ex = rows[1]
+        adj = build_adjacency(ex, select_positions(ex, "sentence"))
+        for a in range(len(adj)):
+            assert adj[a][a] == 0
+            for b in range(len(adj)):
+                assert adj[a][b] == adj[b][a]
+
+    def test_edge_to_head(self, rows):
+        ex = rows[0]
+        adj = build_adjacency(ex, select_positions(ex, "sentence"))
+        assert adj[1][5] == 1
+        assert adj[1][0] == 1
+        assert adj[1][2] == 0
+
+    def test_sdp_mode_is_chain(self, rows):
+        ex = rows[0]
+        adj = build_adjacency(ex, select_positions(ex, "sdp"))
+        assert adj == [[0, 1, 0], [1, 0, 1], [0, 1, 0]]
+
+    def test_every_path_is_chain(self, rows):
+        for ex in rows:
+            if ex["sdp"] is None:
+                continue
+            adj = build_adjacency(ex, ex["sdp"])
+            for k in range(len(adj) - 1):
+                assert adj[k][k + 1] == 1
+
+
+class TestLoadGlove:
+    """load_glove: матрица эмбеддингов из файла GloVe."""
+
+    def test_known_unknown_and_pad(self, tmp_path):
+        glove = tmp_path / "glove.txt"
+        glove.write_text("the 1 2 3\nzebra 4 5 6\ncat 7 8 9\n", encoding="utf-8")
+        vocab = {"<pad>": 0, "<unk>": 1, "the": 2, "cat": 3, "dog": 4}
+        matrix, found = load_glove(str(glove), vocab, 3)
+        assert found == 2
+        assert len(matrix) == 5
+        assert matrix[0] == [0.0, 0.0, 0.0]
+        assert matrix[2] == [1.0, 2.0, 3.0]
+        assert matrix[3] == [7.0, 8.0, 9.0]
+        assert len(matrix[4]) == 3
+
+    def test_wrong_dimension(self, tmp_path):
+        glove = tmp_path / "glove.txt"
+        glove.write_text("the 1 2\n", encoding="utf-8")
+        with pytest.raises(ValueError):
+            load_glove(str(glove), {"<pad>": 0, "<unk>": 1, "the": 2}, 3)

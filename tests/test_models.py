@@ -7,7 +7,8 @@ from torch.utils.data import DataLoader
 from src.relation_extraction.config import LABELS
 from src.relation_extraction.nn.bilstm import BiLSTMClassifier, masked_max
 from src.relation_extraction.nn.data_utils import build_vocab, load_jsonl
-from src.relation_extraction.nn.dataset import REDataset, collate
+from src.relation_extraction.nn.dataset import REDataset, collate, collate_gcn
+from src.relation_extraction.nn.gcn import GCNClassifier
 from src.relation_extraction.nn.train import accuracy, predict, train
 
 SAMPLE_PATH = "tests/sample.jsonl"
@@ -18,9 +19,9 @@ def vocab():
     return build_vocab(load_jsonl(SAMPLE_PATH))
 
 
-def first_batch(vocab, mode):
+def first_batch(vocab, mode, collate_fn=collate):
     dataset = REDataset(SAMPLE_PATH, vocab, mode)
-    loader = DataLoader(dataset, batch_size=4, shuffle=False, collate_fn=collate)
+    loader = DataLoader(dataset, batch_size=4, shuffle=False, collate_fn=collate_fn)
     return next(iter(loader))
 
 
@@ -55,19 +56,69 @@ class TestBiLSTM:
         assert torch.allclose(out_alone[0], out_together[0], atol=1e-5)
 
 
-def overfit(model, vocab, mode):
+class TestGloveEmbeddings:
+    """Готовая матрица эмбеддингов попадает в слой без изменений."""
+
+    def test_weights_copied(self, vocab):
+        matrix = []
+        for i in range(len(vocab)):
+            matrix.append([float(i)] * 4)
+        model = BiLSTMClassifier(len(vocab), len(LABELS), emb_dim=4, hidden=8, embeddings=matrix)
+        assert model.emb.weight[5].tolist() == [5.0, 5.0, 5.0, 5.0]
+
+    def test_wrong_shape(self, vocab):
+        with pytest.raises(ValueError):
+            BiLSTMClassifier(len(vocab), len(LABELS), emb_dim=4, hidden=8, embeddings=[[0.0] * 4])
+
+
+class TestGCN:
+    """GCNClassifier: формы выхода."""
+
+    @pytest.mark.parametrize("use_lstm", [True, False])
+    @pytest.mark.parametrize("mode", ["sentence", "sdp"])
+    def test_output_shape(self, vocab, mode, use_lstm):
+        torch.manual_seed(0)
+        model = GCNClassifier(len(vocab), len(LABELS), emb_dim=16, hidden=8, use_lstm=use_lstm)
+        ids, lengths, e1, e2, labels, adj = first_batch(vocab, mode, collate_gcn)
+        assert tuple(model(ids, lengths, e1, e2, adj).shape) == (4, len(LABELS))
+
+    def test_needs_adjacency(self, vocab):
+        model = GCNClassifier(len(vocab), len(LABELS), emb_dim=16, hidden=8)
+        ids, lengths, e1, e2, labels = first_batch(vocab, "sentence")
+        with pytest.raises(ValueError):
+            model(ids, lengths, e1, e2)
+
+    def test_padding_does_not_change_answer(self, vocab):
+        torch.manual_seed(0)
+        model = GCNClassifier(len(vocab), len(LABELS), emb_dim=16, hidden=8)
+        model.eval()
+        dataset = REDataset(SAMPLE_PATH, vocab, "sentence")
+        alone = collate_gcn([dataset[2]])
+        together = collate_gcn([dataset[2], dataset[0]])
+        out_alone = model(alone[0], alone[1], alone[2], alone[3], alone[5])
+        out_together = model(together[0], together[1], together[2], together[3], together[5])
+        assert torch.allclose(out_alone[0], out_together[0], atol=1e-5)
+
+
+def overfit(model, vocab, mode, collate_fn=collate):
     dataset = REDataset(SAMPLE_PATH, vocab, mode)
-    train_loader = DataLoader(dataset, batch_size=20, shuffle=True, collate_fn=collate)
-    dev_loader = DataLoader(dataset, batch_size=20, shuffle=False, collate_fn=collate)
+    train_loader = DataLoader(dataset, batch_size=20, shuffle=True, collate_fn=collate_fn)
+    dev_loader = DataLoader(dataset, batch_size=20, shuffle=False, collate_fn=collate_fn)
     train(model, train_loader, dev_loader, epochs=150, lr=0.01, weight_decay=0.0, patience=0)
     return accuracy(dataset.gold_labels(), predict(model, dev_loader))
 
 
 class TestOverfitSample:
-    """Главная проверка: BiLSTM может выучить 20 примеров почти на 100%."""
+    """Главная проверка: модель может выучить 20 примеров почти на 100%."""
 
     @pytest.mark.parametrize("mode", ["sentence", "sdp"])
     def test_bilstm(self, vocab, mode):
         torch.manual_seed(0)
         model = BiLSTMClassifier(len(vocab), len(LABELS), emb_dim=32, hidden=32, dropout=0.0)
         assert overfit(model, vocab, mode) >= 0.95
+
+    @pytest.mark.parametrize("mode", ["sentence", "sdp"])
+    def test_gcn(self, vocab, mode):
+        torch.manual_seed(0)
+        model = GCNClassifier(len(vocab), len(LABELS), emb_dim=32, hidden=32, dropout=0.0)
+        assert overfit(model, vocab, mode, collate_gcn) >= 0.95
